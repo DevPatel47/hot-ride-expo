@@ -27,8 +27,180 @@ const fade = (i) => ({ initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y:
 const tooltipStyle = { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '8px 12px', color: '#f1f5f9', fontSize: '12px' };
 const PIE_COLORS = ['#e85d04', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
 
-// === ADMIN / ORGANIZER DASHBOARD ===
+// === ADMIN DASHBOARD ===
 function AdminDashboard() {
+  const [summary, setSummary] = useState(null);
+  const [profitLoss, setProfitLoss] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [overview, setOverview] = useState({ organizers: [], recentEvents: [], organizersCount: 0, activeOrganizers: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/reports/dashboard'),
+      api.get('/reports/profit-loss'),
+      api.get('/reports/pending-payments'),
+      api.get('/reports/admin-overview')
+    ]).then(([s, pl, p, o]) => {
+      setSummary(s.data);
+      setProfitLoss(pl.data);
+      setPending(p.data);
+      setOverview(o.data);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Spinner />;
+
+  const stats = [
+    { icon: HiOutlineUserGroup, label: 'Organizers', value: overview.organizersCount || 0, color: 'text-info' },
+    { icon: HiOutlineCalendar, label: 'Active Organizers', value: overview.activeOrganizers || 0, color: 'text-success' },
+    { icon: HiOutlineCalendar, label: 'Events', value: summary?.totalEvents || 0, color: 'text-brand' },
+    { icon: HiOutlineTicket, label: 'Registrations', value: summary?.totalRegistrations || 0, color: 'text-purple-400' },
+    { icon: HiOutlineCurrencyDollar, label: 'Revenue', value: summary?.totalRevenue || 0, prefix: '$', color: 'text-brand' },
+    { icon: HiOutlineClock, label: 'Pending', value: summary?.pendingPayments || 0, color: 'text-warning' },
+  ];
+
+  const organizerChartData = overview.organizers.slice(0, 6).map((organizer) => ({
+    name: organizer.name.split(' ')[0],
+    revenue: organizer.totalRevenue,
+    events: organizer.totalEvents,
+  }));
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-text">Admin Dashboard</h1>
+        <p className="text-sm text-text-muted mt-1">System-wide oversight across organizers, events, and revenue</p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        {stats.map((s, i) => (
+          <motion.div key={i} {...fade(i)} className="card">
+            <div className="flex items-center gap-2 mb-3">
+              <s.icon className={`w-5 h-5 ${s.color}`} />
+              <span className="text-xs text-text-faint">{s.label}</span>
+            </div>
+            <p className={`text-xl font-bold ${s.color}`}><CountUp target={s.value} prefix={s.prefix} /></p>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div {...fade(6)} className="card">
+          <h3 className="text-sm font-semibold text-text mb-5">Profit / Loss by Event</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={profitLoss} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="eventName" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                <Bar dataKey="profitLoss" fill="#10b981" radius={[4, 4, 0, 0]} name="Net P/L" />
+                <Bar dataKey="expenses" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expenses" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
+        <motion.div {...fade(7)} className="card">
+          <h3 className="text-sm font-semibold text-text mb-5">Top Organizer Revenue</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={organizerChartData} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Revenue" />
+                <Bar dataKey="events" fill="#e85d04" radius={[4, 4, 0, 0]} name="Events" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div {...fade(8)} className="card">
+          <h3 className="text-sm font-semibold text-text mb-4">Organizer Roster</h3>
+          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+            {overview.organizers.map((organizer) => (
+              <div key={organizer._id} className="rounded-xl border border-border bg-surface p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-text">{organizer.name}</p>
+                    <p className="text-xs text-text-muted">{organizer.email}</p>
+                    <p className="text-xs text-text-faint mt-1">{organizer.phone || 'No phone on file'}</p>
+                  </div>
+                  <span className={`badge ${organizer.totalEvents > 0 ? 'badge-success' : 'badge-neutral'}`}>
+                    {organizer.totalEvents > 0 ? 'Active' : 'No Events'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+                  <div>
+                    <p className="text-text-faint">Events</p>
+                    <p className="text-text font-medium">{organizer.totalEvents} total / {organizer.openEvents} open</p>
+                  </div>
+                  <div>
+                    <p className="text-text-faint">Registrations</p>
+                    <p className="text-text font-medium">{organizer.totalRegistrations} total / {organizer.pendingRegistrations} pending</p>
+                  </div>
+                  <div>
+                    <p className="text-text-faint">Revenue</p>
+                    <p className="text-brand font-semibold">${organizer.totalRevenue.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-faint">Latest Event</p>
+                    <p className="text-text font-medium">{organizer.latestEventName || 'None yet'}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {overview.organizers.length === 0 && <p className="text-sm text-text-faint text-center py-8">No organizers yet</p>}
+          </div>
+        </motion.div>
+
+        <div className="space-y-6">
+          <motion.div {...fade(9)} className="card">
+            <h3 className="text-sm font-semibold text-text mb-4">Recent Events</h3>
+            <div className="space-y-3">
+              {overview.recentEvents.map((event) => (
+                <div key={event._id} className="flex items-center justify-between gap-3 rounded-xl bg-surface p-3">
+                  <div>
+                    <p className="text-sm font-medium text-text">{event.eventName}</p>
+                    <p className="text-xs text-text-muted">{event.organizerName} | ${Number(event.registrationFee ?? 75).toLocaleString()}</p>
+                    <p className="text-xs text-text-faint">{new Date(event.date).toLocaleDateString()} | {event.location}</p>
+                  </div>
+                  <span className={`badge ${event.status === 'Open' ? 'badge-success' : event.status === 'Closed' ? 'badge-neutral' : 'badge-danger'}`}>
+                    {event.status}
+                  </span>
+                </div>
+              ))}
+              {overview.recentEvents.length === 0 && <p className="text-sm text-text-faint text-center py-6">No events found</p>}
+            </div>
+          </motion.div>
+
+          {pending.length > 0 && (
+            <motion.div {...fade(10)} className="card">
+              <h3 className="text-sm font-semibold text-text mb-4">Pending Registrations ({pending.length})</h3>
+              <div className="space-y-3">
+                {pending.slice(0, 5).map((registration, index) => (
+                  <div key={index} className="rounded-xl bg-surface p-3">
+                    <p className="text-sm font-medium text-text">{registration.vehicleID?.registrantID?.name}</p>
+                    <p className="text-xs text-text-muted">{registration.eventID?.eventName}</p>
+                    <p className="text-xs text-text-faint">{registration.vehicleID?.year} {registration.vehicleID?.make} {registration.vehicleID?.model}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// === ORGANIZER DASHBOARD ===
+function OrganizerDashboard() {
   const [summary, setSummary] = useState(null);
   const [profitLoss, setProfitLoss] = useState([]);
   const [pending, setPending] = useState([]);
@@ -57,8 +229,8 @@ function AdminDashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-text">Admin Dashboard</h1>
-        <p className="text-sm text-text-muted mt-1">Global financial overview across all events</p>
+        <h1 className="text-2xl font-bold text-text">Organizer Dashboard</h1>
+        <p className="text-sm text-text-muted mt-1">Financial overview for the events you organize</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -439,7 +611,7 @@ export default function DashboardPage() {
 
   switch (user?.role) {
     case 'admin': return <AdminDashboard />;
-    case 'organizer': return <AdminDashboard />;
+    case 'organizer': return <OrganizerDashboard />;
     case 'registrant': return <RegistrantDashboard />;
     case 'sponsor': return <SponsorDashboard />;
     case 'vendor': return <VendorDashboard />;

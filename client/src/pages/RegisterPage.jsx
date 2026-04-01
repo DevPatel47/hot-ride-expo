@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const roleOptions = [
+  { value: 'organizer', label: 'Organizer', desc: 'Plan and manage events across the expo' },
   { value: 'registrant', label: 'Registrant', desc: 'Register your vehicle for events' },
   { value: 'sponsor', label: 'Sponsor', desc: 'Sponsor events with packages' },
   { value: 'vendor', label: 'Vendor', desc: 'Book a vendor booth at events' },

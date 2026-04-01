@@ -1,13 +1,23 @@
 const Registration = require('../models/Registration');
 const Vehicle = require('../models/Vehicle');
 const Registrant = require('../models/Registrant');
+const { getOrganizerEventIds, isOrganizer, organizerOwnsEvent } = require('../utils/organizerScope');
 
 exports.getAll = async (req, res) => {
   try {
-    const filter = req.query.eventID ? { eventID: req.query.eventID } : {};
+    const filter = {};
+    if (req.query.eventID) {
+      filter.eventID = req.query.eventID;
+    }
+    if (isOrganizer(req.user)) {
+      const eventIds = await getOrganizerEventIds(req.user.id);
+      filter.eventID = req.query.eventID
+        ? { $in: eventIds.filter(id => id.toString() === req.query.eventID) }
+        : { $in: eventIds };
+    }
     const registrations = await Registration.find(filter)
       .populate({ path: 'vehicleID', populate: { path: 'registrantID', select: 'name email phone club' } })
-      .populate('eventID', 'eventName date location status')
+      .populate('eventID', 'eventName date location status registrationFee organizerID')
       .sort({ createdAt: -1 });
     res.json(registrations);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -15,9 +25,14 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const reg = await Registration.findById(req.params.id)
+    const filter = { _id: req.params.id };
+    if (isOrganizer(req.user)) {
+      const eventIds = await getOrganizerEventIds(req.user.id);
+      filter.eventID = { $in: eventIds };
+    }
+    const reg = await Registration.findOne(filter)
       .populate({ path: 'vehicleID', populate: { path: 'registrantID', select: 'name email phone club' } })
-      .populate('eventID', 'eventName date location status');
+      .populate('eventID', 'eventName date location status registrationFee organizerID');
     if (!reg) return res.status(404).json({ message: 'Registration not found' });
     res.json(reg);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -36,7 +51,7 @@ exports.getMyRegistrations = async (req, res) => {
     // Find all registrations for those vehicles
     const registrations = await Registration.find({ vehicleID: { $in: vehicleIds } })
       .populate({ path: 'vehicleID', populate: { path: 'registrantID', select: 'name email phone club' } })
-      .populate('eventID', 'eventName date location status registrationFee')
+      .populate('eventID', 'eventName date location status registrationFee organizerID')
       .sort({ createdAt: -1 });
     res.json(registrations);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -72,6 +87,9 @@ exports.create = async (req, res) => {
     }
 
     if (!eventID || !finalVehicleID) return res.status(400).json({ message: 'eventID and vehicle details are required' });
+    if (!(await organizerOwnsEvent(req.user, eventID))) {
+      return res.status(403).json({ message: 'You can only manage registrations for your own events' });
+    }
 
     const existing = await Registration.findOne({ eventID, vehicleID: finalVehicleID });
     if (existing) return res.status(400).json({ message: 'This vehicle is already registered for this event' });
@@ -79,16 +97,21 @@ exports.create = async (req, res) => {
     const registration = await Registration.create({ eventID, vehicleID: finalVehicleID, tShirtSize, registrationStatus: 'Pending' });
     const populated = await Registration.findById(registration._id)
       .populate({ path: 'vehicleID', populate: { path: 'registrantID', select: 'name email phone club' } })
-      .populate('eventID', 'eventName date location status');
+      .populate('eventID', 'eventName date location status registrationFee organizerID');
     res.status(201).json(populated);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.update = async (req, res) => {
   try {
-    const reg = await Registration.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
+    const filter = { _id: req.params.id };
+    if (isOrganizer(req.user)) {
+      const eventIds = await getOrganizerEventIds(req.user.id);
+      filter.eventID = { $in: eventIds };
+    }
+    const reg = await Registration.findOneAndUpdate(filter, req.body, { new: true, runValidators: true })
       .populate({ path: 'vehicleID', populate: { path: 'registrantID', select: 'name email phone club' } })
-      .populate('eventID', 'eventName date location status');
+      .populate('eventID', 'eventName date location status registrationFee organizerID');
     if (!reg) return res.status(404).json({ message: 'Registration not found' });
     res.json(reg);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -96,7 +119,12 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
-    const reg = await Registration.findByIdAndDelete(req.params.id);
+    const filter = { _id: req.params.id };
+    if (isOrganizer(req.user)) {
+      const eventIds = await getOrganizerEventIds(req.user.id);
+      filter.eventID = { $in: eventIds };
+    }
+    const reg = await Registration.findOneAndDelete(filter);
     if (!reg) return res.status(404).json({ message: 'Registration not found' });
     res.json({ message: 'Registration deleted' });
   } catch (err) { res.status(500).json({ message: err.message }); }

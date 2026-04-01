@@ -2,10 +2,11 @@ const router = require('express').Router();
 const ctrl = require('../controllers/sponsorController');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
+const optionalAuth = require('../middleware/optionalAuth');
 
 router.get('/', ctrl.getAll);
 router.post('/', auth, authorize('admin', 'organizer', 'sponsor'), ctrl.create);
-router.get('/packages', ctrl.getPackages);
+router.get('/packages', optionalAuth, ctrl.getPackages);
 router.post('/packages', auth, authorize('admin', 'organizer'), ctrl.createPackage);
 router.get('/event-sponsors', auth, authorize('admin', 'organizer'), ctrl.getEventSponsors);
 router.get('/my', auth, authorize('sponsor'), ctrl.getMySponsorships);

@@ -3,6 +3,7 @@ const ctrl = require('../controllers/reportController');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
 
+router.get('/admin-overview', auth, authorize('admin'), ctrl.adminOverview);
 router.get('/dashboard', auth, authorize('admin', 'organizer'), ctrl.dashboardSummary);
 router.get('/revenue', auth, authorize('admin', 'organizer'), ctrl.revenueByEvent);
 router.get('/donations', auth, authorize('admin', 'organizer'), ctrl.donationsByEvent);

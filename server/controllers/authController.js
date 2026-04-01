@@ -38,9 +38,9 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: 'Name, email, password, and role are required' });
     }
 
-    const allowedRoles = ['registrant', 'sponsor', 'vendor', 'donor'];
+    const allowedRoles = ['organizer', 'registrant', 'sponsor', 'vendor', 'donor'];
     if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: 'Self-registration is only allowed for registrant, sponsor, vendor, or donor roles' });
+      return res.status(400).json({ message: 'Self-registration is only allowed for organizer, registrant, sponsor, vendor, or donor roles' });
     }
 
     const existing = await User.findOne({ email });

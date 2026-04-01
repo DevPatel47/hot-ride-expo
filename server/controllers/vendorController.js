@@ -1,5 +1,6 @@
 const Vendor = require('../models/Vendor');
 const EventVendor = require('../models/EventVendor');
+const { getOrganizerEventIds, isOrganizer, organizerOwnsEvent } = require('../utils/organizerScope');
 
 exports.getAll = async (req, res) => {
   try {
@@ -19,7 +20,16 @@ exports.create = async (req, res) => {
 
 exports.getEventVendors = async (req, res) => {
   try {
-    const filter = req.query.eventID ? { eventID: req.query.eventID } : {};
+    const filter = {};
+    if (req.query.eventID) {
+      filter.eventID = req.query.eventID;
+    }
+    if (isOrganizer(req.user)) {
+      const eventIds = await getOrganizerEventIds(req.user.id);
+      filter.eventID = req.query.eventID
+        ? { $in: eventIds.filter(id => id.toString() === req.query.eventID) }
+        : { $in: eventIds };
+    }
     const eventVendors = await EventVendor.find(filter)
       .populate('vendorID', 'name contactEmail phone')
       .populate('eventID', 'eventName date');
@@ -53,6 +63,9 @@ exports.createEventVendor = async (req, res) => {
 
     if (!eventID || !vendorID || !boothNumber || !amountPaid) {
       return res.status(400).json({ message: 'All fields are required' });
+    }
+    if (!(await organizerOwnsEvent(req.user, eventID))) {
+      return res.status(403).json({ message: 'You can only assign vendors to your own events' });
     }
     const ev = await EventVendor.create({ eventID, vendorID, boothNumber, amountPaid });
     const populated = await EventVendor.findById(ev._id)

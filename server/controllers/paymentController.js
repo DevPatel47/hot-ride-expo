@@ -1,9 +1,15 @@
 const Payment = require('../models/Payment');
 const Registration = require('../models/Registration');
+const { getOrganizerRegistrationIds, isOrganizer, organizerOwnsRegistration } = require('../utils/organizerScope');
 
 exports.getAll = async (req, res) => {
   try {
-    const payments = await Payment.find()
+    const filter = {};
+    if (isOrganizer(req.user)) {
+      const registrationIds = await getOrganizerRegistrationIds(req.user.id);
+      filter.registrationID = { $in: registrationIds };
+    }
+    const payments = await Payment.find(filter)
       .populate({
         path: 'registrationID',
         populate: [
@@ -35,8 +41,38 @@ exports.getMyPayments = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const { registrationID, sponsorshipID, vendorBookingID, method, amount, transactionRef, paymentType } = req.body;
-    if (!method || !amount || !transactionRef) {
+    let registration = null;
+    let finalAmount = amount;
+
+    if (registrationID) {
+      registration = await Registration.findById(registrationID).populate('eventID', 'registrationFee eventName');
+      if (!registration) {
+        return res.status(400).json({ message: 'Registration not found' });
+      }
+    }
+
+    if (paymentType === 'registration' || registrationID) {
+      if (!registration) {
+        return res.status(400).json({ message: 'registrationID is required for registration payments' });
+      }
+      finalAmount = registration.eventID?.registrationFee;
+    }
+
+    if (!method || finalAmount === undefined || finalAmount === null || !transactionRef) {
       return res.status(400).json({ message: 'method, amount, and transactionRef are required' });
+    }
+
+    finalAmount = Number(finalAmount);
+    if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
+      return res.status(400).json({ message: 'amount must be a positive number' });
+    }
+    if (req.user.role === 'organizer') {
+      if (!registrationID) {
+        return res.status(400).json({ message: 'Organizers can only record registration payments for their own events' });
+      }
+      if (!(await organizerOwnsRegistration(req.user, registrationID))) {
+        return res.status(403).json({ message: 'You can only record payments for registrations in your own events' });
+      }
     }
 
     // Enforce unique transactionRef
@@ -50,7 +86,7 @@ exports.create = async (req, res) => {
       userID: req.user.id,
       paymentType: paymentType || 'registration',
       method,
-      amount,
+      amount: finalAmount,
       transactionRef,
       paymentDate: new Date()
     });
@@ -63,7 +99,7 @@ exports.create = async (req, res) => {
     const populated = await Payment.findById(payment._id).populate({
       path: 'registrationID',
       populate: [
-        { path: 'eventID', select: 'eventName date' },
+        { path: 'eventID', select: 'eventName date registrationFee' },
         { path: 'vehicleID', populate: { path: 'registrantID', select: 'name email' } }
       ]
     });
